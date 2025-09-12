@@ -1,0 +1,205 @@
+/* ======= PALETA ELIND DARK ======= */
+:root{
+  --primary:#25D366; --secondary:#128C7E;
+  --light:#f5f5f5; --dark:#075E54; --gray:#223047; --warning:#ff9800;
+  --bg:#0f1115; --panel:#141b25; --panel-2:#0f1520; --panel-3:#111827;
+  --muted:#9aa5b1; --muted-2:#98a2b3; --text:#eef2f6; --text-strong:#eaf1ff;
+}
+
+/* ======= LAYOUT GENERAL ======= */
+html,body{ background:var(--bg); color:var(--text); }
+.container{
+  background:#0f1115;
+  border-radius:14px;
+  box-shadow:0 6px 18px rgba(0,0,0,.35);
+  border:1px solid #1a2333;
+}
+header{ border-bottom:1px solid #223047; }
+h1{ color:#e6edf7; }
+.muted,.small-muted{ color:#9aa5b1 !important; }
+
+/* ======= NAV / TABS ======= */
+.tabs{ display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid #223047; }
+.tab{
+  padding:10px 14px; border:1px solid #2a3a56; border-bottom:none;
+  border-radius:10px 10px 0 0; background:#182236; color:#dbe6f4;
+  font-weight:600; cursor:pointer;
+}
+.tab:hover{ background:#20304a; }
+.tab.active{
+  background:#141b25; color:#e7edf7; border-color:#223047; margin-bottom:-1px;
+}
+
+/* Contenido de tabs */
+.tab-content{
+  border:1px solid #223047; border-top:none; border-radius:0 0 10px 10px;
+  background:#0f1520; color:#dbe6f4;
+}
+.section-title{ font-weight:800; color:#e6edf7; }
+
+/* ======= CARDS (aplican para preview y bloques internos) ======= */
+.contact-preview, .elind-card, .ocr-result{
+  background:#141b25; border:1px solid #223047; border-radius:14px;
+  box-shadow:0 6px 18px rgba(0,0,0,.25);
+}
+.contact-preview h3{ color:#eaf1ff; }
+
+/* ======= FORM ======= */
+input,textarea,select{
+  background:#0f1520; color:#dbe6f4; border:1px solid #2a3142;
+  border-radius:10px;
+}
+input::placeholder, textarea::placeholder{ color:#7d8697; }
+
+/* ======= BOTONES ======= */
+button,.whatsapp-btn{
+  background:#182236; color:#dbe6f4; border:1px solid #2a3a56;
+  border-radius:10px; font-weight:700;
+}
+button:hover,.whatsapp-btn:hover{ background:#20304a; }
+button.secondary{ background:var(--warning); border-color:#cc7d00; color:#111; }
+.whatsapp-btn{
+  background:var(--primary); color:#0f1115; border:0; font-size:1.05rem;
+  text-align:center; display:block; width:100%;
+}
+.whatsapp-btn:hover{ background:#1cbc5b; }
+
+/* ======= CHIP "VIENDO: …" (si lo usas) ======= */
+#selectedInfo{
+  display:flex; align-items:center; gap:.5rem;
+  border:1px solid #223047; background:#0f1520; border-radius:999px;
+  padding:.35rem .7rem; width:fit-content; box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+#selectedCountryLabel{ font-weight:700; color:#e2e8f0; }
+#selectedCountryCount{
+  display:inline-flex; align-items:center; justify-content:center;
+  background:#38bdf8; color:#0f1115; border-radius:999px; padding:.2rem .6rem; font-weight:800;
+}
+#btnClearSelection{
+  margin-left:auto; border:1px solid #2a3a56; background:#182236; color:#cdd9ee;
+  padding:.2rem .5rem; border-radius:9px; font-size:.9rem; cursor:pointer;
+}
+#btnClearSelection:hover{ background:#22324d; }
+
+/* ======= QR / CÁMARA / OCR ======= */
+#qr-reader{ background:#0f1520; border:1px solid #223047; border-radius:12px; }
+#scan-result{ color:#cfd6e2; }
+.camera-container{ display:flex; justify-content:center; }
+#camera-preview,#image-preview{
+  width:100%; max-width:420px; border:1px solid #223047; border-radius:12px; background:#0b0f16;
+}
+.ocr-loading{ display:flex; gap:10px; align-items:center; justify-content:center; color:#aebbd1; }
+.spinner{ border-color:rgba(255,255,255,.1); border-left-color:#25D366; }
+
+/* ======= TABLA “oscura” (si usas tablas en esta app) ======= */
+.table{
+  --bs-table-bg:#111827; --bs-table-color:#dbe6f4;
+  --bs-table-striped-bg:#0f1520; --bs-table-hover-bg:#182236;
+  --bs-table-border-color:#2a3142;
+  background-color:var(--bs-table-bg); color:var(--bs-table-color); border-color:var(--bs-table-border-color);
+}
+.table thead th{
+  position:sticky; top:0; z-index:2; background:#101720 !important; color:#e2e8f0 !important;
+  border-bottom:1px solid #2a3142 !important; text-transform:uppercase; font-size:.8rem; font-weight:700; letter-spacing:.02em;
+}
+.table tbody tr:hover{ background:var(--bs-table-hover-bg) !important; }
+td.truncate{ max-width:420px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#cfd6e2; }
+td.truncate:hover{ white-space:normal; background:#151d2a; color:#fff; border-radius:6px; }
+
+/* ======= SCROLLBAR bonita ======= */
+*::-webkit-scrollbar{ width:10px; height:10px; }
+*::-webkit-scrollbar-thumb{ background:#223049; border-radius:10px; border:2px solid #10151f; }
+*::-webkit-scrollbar-track{ background:#0b0f16; }
+
+/* ===== FIX títulos tenues ===== */
+h1,h2,h3,h4,h5,h6{ color:#eaf1ff !important; font-weight:800; }
+.section-title,.section-subtitle{ color:#eaf1ff !important; }
+
+/* ===== Snippets del look de países/gráfico por si agregas esos módulos después ===== */
+#countryListWrapper, #contactsTableWrap{
+  background:#0f1520; border:1px solid #223047; border-radius:12px;
+}
+#panelTitle{ color:#e6edf7; font-weight:800; }
+#panelSubTitle{ color:#9aa5b1; }
+#chartWrap{ height:calc(100vh - 300px); min-height:420px; max-height:760px; }
+.smooth-height{ transition:height .25s ease; }
+
+/* Inputs coherentes en dark */
+.form-control {
+  border-radius: 10px;
+}
+
+/* Cards y contenedores con tu look */
+.card { border-radius: 14px; }
+
+/* Botones en dark estilo ELIND */
+.btn-primary { background:#25D366; border-color:#25D366; color:#0f1115; }
+.btn-primary:hover { background:#1cbc5b; border-color:#1cbc5b; }
+
+.btn-success { background:#25D366; border-color:#25D366; color:#0f1115; }
+.btn-success:hover { background:#1cbc5b; border-color:#1cbc5b; }
+
+/* === ELIND DARK x Bootstrap: override fino === */
+[data-bs-theme="dark"]{
+  /* Colores base */
+  --bs-body-bg: #0f1115;
+  --bs-body-color: #eaf1ff;
+  --bs-border-color: #2a3142;
+
+  /* Cards / superficies */
+  --bs-card-bg: #0f1520;
+  --bs-card-color: #dbe6f4;
+  --bs-tertiary-bg: #0f1520;
+
+  /* Links / muted */
+  --bs-emphasis-color: #eaf1ff;
+  --bs-secondary-color: #aebbd1;
+
+  /* Form controls (clave para que NO salgan blancos) */
+  --bs-form-control-bg: #101726;
+  --bs-form-control-color: #eaf1ff;
+  --bs-form-control-border-color: #2a3142;
+  --bs-form-control-focus-bg: #101b2a;
+  --bs-form-control-focus-border-color: #38bdf8;
+  --bs-focus-ring-color: rgba(56,189,248,.25);
+}
+
+/* Forzamos a los controles a usar nuestras vars dark */
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select,
+[data-bs-theme="dark"] textarea.form-control {
+  background-color: var(--bs-form-control-bg) !important;
+  color: var(--bs-form-control-color) !important;
+  border-color: var(--bs-form-control-border-color) !important;
+  box-shadow: none !important;
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus,
+[data-bs-theme="dark"] textarea.form-control:focus {
+  background-color: var(--bs-form-control-focus-bg) !important;
+  border-color: var(--bs-form-control-focus-border-color) !important;
+  box-shadow: 0 0 0 .25rem var(--bs-focus-ring-color) !important;
+}
+
+[data-bs-theme="dark"] .form-control::placeholder,
+[data-bs-theme="dark"] textarea.form-control::placeholder {
+  color: #9aa5b1 !important;
+  opacity: 1;
+}
+
+/* Chrome autofill en dark (quita el amarillo) */
+[data-bs-theme="dark"] input:-webkit-autofill,
+[data-bs-theme="dark"] textarea:-webkit-autofill,
+[data-bs-theme="dark"] select:-webkit-autofill {
+  -webkit-text-fill-color: var(--bs-form-control-color) !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--bs-form-control-bg) inset !important;
+  border-color: var(--bs-form-control-border-color) !important;
+}
+
+/* Textos muy tenues en la tarjeta de preview */
+#contact-preview-content { color:#dbe6f4 !important; }
+[data-bs-theme="dark"] .text-muted { color:#aebbd1 !important; }
+
+/* Botón WhatsApp con aire y radio */
+#send-whatsapp { border-radius:12px !important; }
