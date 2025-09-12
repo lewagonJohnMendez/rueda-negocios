@@ -5,6 +5,7 @@ import { normalizeEmail, normalizePhone } from './validators.js';
 
 let unsub = null;
 let off = [];
+let boundGlobalClear = false; // ← evita enlazar dos veces
 
 export function initManual(){
   const form = qs('#contact-form');
@@ -38,19 +39,72 @@ export function initManual(){
     alert('Contacto guardado ✅  (formulario listo para el siguiente)');
   }));
 
-  // Limpiar manualmente (si tienes el botón)
+  // Limpiar del tab Manual (si existe botón local)
   const clearBtn = qs('#clear-contact');
   if (clearBtn){
     off.push(on(clearBtn, 'click', () => {
-      store.reset();               // borra store + dispara subscribe → esconde botón
+      store.reset();
       clearForm(form, fields);
       renderPreview(store.get());
-      syncWhatsAppVisibility();    // por si quieres forzar justo aquí también
+      syncWhatsAppVisibility();
     }));
+  }
+
+  // ← Enlazar botón global una sola vez
+  if (!boundGlobalClear) {
+    bindGlobalClear();
+    boundGlobalClear = true;
   }
 }
 
+// ========== NUEVO: botón global "Limpiar todo" ==========
+export function bindGlobalClear(){
+  const btn = qs('#global-clear');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    // 1) Apagar recursos activos (QR / Tarjeta / Audio si aplica)
+    try { const { destroyQR }  = await import('./qr.js');  await destroyQR();  } catch {}
+    try { const { destroyCard }= await import('./ocr.js'); await destroyCard(); } catch {}
+    try { const { destroyAudio}= await import('./audio.js'); await destroyAudio?.(); } catch {}
+
+    // 2) Limpiar formularios conocidos
+    document.querySelectorAll('form').forEach(f => f.reset());
+
+    // Forzar vacío de inputs del contacto por si el navegador “recuerda”
+    ['name','company','position','phone','email','notes'].forEach(id => {
+      const el = qs('#'+id); if (el) el.value = '';
+    });
+
+    // 3) Limpiar UI de QR
+    const scanRes  = qs('#scan-result');   if (scanRes)  scanRes.textContent = '';
+    const qrStatus = qs('#qr-status');     if (qrStatus) qrStatus.textContent = 'Listo para escanear. Pulsa “Iniciar escaneo”.';
+    const qrFile   = qs('#qr-file');       if (qrFile)   qrFile.value = '';
+
+    // 4) Limpiar UI de Tarjeta (OCR)
+    const imgPrev  = qs('#image-preview'); if (imgPrev){ imgPrev.removeAttribute('src'); imgPrev.hidden = true; }
+    const ocrLoad  = qs('#ocr-loading');   if (ocrLoad)  ocrLoad.hidden = true;
+    const ocrRes   = qs('#ocr-result');    if (ocrRes)   ocrRes.hidden = true;
+    const procBtn  = qs('#process-card');  if (procBtn)  procBtn.style.display = 'none';
+    const saveBtn  = qs('#save-from-card');if (saveBtn)  saveBtn.style.display = 'none';
+
+    // 5) Reset del store (borra contacto y dispara suscriptores)
+    store.reset();
+
+    // 6) Refrescar preview y visibilidad WhatsApp
+    renderPreview(store.get());
+    syncWhatsAppVisibility();
+
+    // 7) Avisar a quien escuche (ej. tabs)
+    document.dispatchEvent(new CustomEvent('elind-contact-updated'));
+
+    alert('Todo limpio ✅');
+  });
+}
+
+// ========== helpers ==========
 function clearForm(form, fields){
+  if (!form) return;
   form.reset();
   fields.forEach(id => { const el = qs('#'+id); if (el) el.value = ''; });
 }
@@ -67,11 +121,11 @@ function renderPreview(state){
   box.innerHTML = lines.join('') || 'No hay información capturada aún';
 }
 
-// ← NUEVO: mostrar/ocultar botón según si hay datos
+// Mostrar/ocultar WhatsApp según si hay datos
 function syncWhatsAppVisibility(){
   const btn = qs('#send-whatsapp');
   if (!btn) return;
   const s = store.get();
   const any = Boolean(s.name || s.company || s.position || s.phone || s.email || s.notes);
-  btn.hidden = !any; // se muestra cuando hay algo que enviar
+  btn.hidden = !any;
 }

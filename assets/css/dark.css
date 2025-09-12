@@ -203,3 +203,28 @@ h1,h2,h3,h4,h5,h6{ color:#eaf1ff !important; font-weight:800; }
 
 /* Botón WhatsApp con aire y radio */
 #send-whatsapp { border-radius:12px !important; }
+
+
+/* Barra de acciones bajo la tarjeta de contacto */
+.preview-actions{
+  display:flex;
+  justify-content:flex-end;
+  padding:.5rem .75rem;
+  margin-top:.25rem;
+}
+
+/* Botón ghost/soft para limpiar (no roba foco visual) */
+.btn-clean{
+  background:transparent;
+  color:#aebbd1;
+  border:1px solid #2a3142;         /* se ve bien en dark; en light queda gris suave */
+  padding:.45rem .9rem;
+  border-radius:10px;
+  font-weight:600;
+  transition: background .2s ease, border-color .2s ease, color .2s ease;
+}
+.btn-clean:hover{
+  background:#1a2435;               /* dark hover suave (en light se ve como gris) */
+  border-color:#3a4b67;
+  color:#fff;
+}
