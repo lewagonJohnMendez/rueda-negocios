@@ -85,7 +85,7 @@
     </div>
 
     <!-- Controles de escaneo -->
-    <div class="d-flex align-items-center gap-2 flex-wrap mt-3">
+    <div class="d-flex align-items-center gap-2 flex-wrap mt-3 justify-content-center">
             <button id="qr-start" type="button" class="btn btn-success btn-sm">Iniciar escaneo</button>
             <button id="qr-stop" type="button" class="btn btn-outline-secondary btn-sm" disabled>Detener</button>
             <span id="qr-status" class="text-muted small">
@@ -109,24 +109,24 @@
 
 
     <!-- TAB: Foto de Tarjeta (OCR) -->
-        <section id="card-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-card">
-        <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
-            <button id="card-start"   class="btn btn-primary btn-sm">Iniciar cámara</button>
-            <button id="card-stop"    class="btn btn-outline-secondary btn-sm" disabled>Detener</button>
-            <button id="capture-btn"  class="btn btn-success btn-sm" disabled>Capturar</button>
-            <input id="card-upload" type="file" accept="image/*" class="form-control form-control-sm" style="max-width:260px">
-            <button id="process-card" class="btn btn-info btn-sm" hidden>Procesar OCR</button>
-            <button id="save-from-card" class="btn btn-success btn-sm" hidden>Guardar</button>
-            <span id="ocr-status" class="text-muted small">Listo para procesar tarjeta. Inicia la cámara o sube una imagen.</span>
-        </div>
-
-        <div class="camera-container mb-2">
+       <section id="card-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-card">
+        <div class="camera-container card mb-2">
             <video id="ocr-video" autoplay playsinline muted class="rounded border" style="max-height:380px"></video>
         </div>
 
-        <div class="camera-container mt-2">
+        <div class="camera-container card mt-2">
             <img id="image-preview" alt="Vista previa" class="rounded border" hidden />
         </div>
+
+        <div class="ocr-controls d-flex flex-wrap gap-2 mt-3 justify-content-center">
+            <button id="card-start"   type="button" class="btn btn-success">Iniciar cámara</button>
+            <button id="card-stop"    type="button" class="btn btn-outline-secondary" disabled>Detener</button>
+            <button id="capture-btn"  type="button" class="btn btn-primary" disabled>Capturar</button>
+
+            <input  id="card-upload"  type="file" accept="image/*" class="form-control w-auto">
+            <button id="process-card" type="button" class="btn btn-warning" hidden>Procesar OCR</button>
+            <button id="save-from-card" type="button" class="btn btn-outline-light" hidden>Guardar info</button>
+          </div>
 
         <div id="ocr-loading" class="ocr-loading mt-3" hidden>
             <div class="spinner"></div><p class="m-0">Procesando…</p>

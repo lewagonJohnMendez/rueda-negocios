@@ -1,47 +1,44 @@
 // assets/js/ocr.js
-// Cámara + captura + preproceso + OCR (Tesseract global) + extracción + merge
+// Cámara + captura recortada a tarjeta + preproceso + OCR (Tesseract global) + extracción + merge
 import { store } from './store.js';
 import { qs } from './dom.js';
 import { normalizeEmail, normalizePhone } from './validators.js';
 import { startCamera as camStart, stopCamera as camStop, attachToVideo } from './camera.js';
 
+const CARD_RATIO = 85.6 / 54; // ≈ 1.586 (landscape business card)
+
 let capturedDataUrl = null;
 let offscreen = null;
 let ctx = null;
 
-/* =========================================================
-   Cargar Tesseract como GLOBAL (window.Tesseract) + worker
-   ========================================================= */
+/* ===================== Utils UI ===================== */
+function hide(el, v = true){ if (el) el.hidden = v; }
+function disable(el, v = true){ if (el) el.disabled = v; }
+function setOcrStatus(msg){ const s = qs('#ocr-status'); if (s) s.textContent = msg; }
+
+/* ===================== Tesseract (Global + Worker) ===================== */
 let _tessReady = null;
 async function ensureTesseractGlobal() {
   if (_tessReady) return _tessReady;
-
   _tessReady = new Promise((resolve, reject) => {
     if (window.Tesseract && window.Tesseract.createWorker) return resolve();
-
     const script = document.createElement('script');
-    // Versión 2.x estable para browser UMD
     script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js';
     script.async = true;
-    script.onload = () => {
-      if (window.Tesseract) resolve();
-      else reject(new Error('No se pudo inicializar Tesseract global'));
-    };
+    script.onload = () => window.Tesseract ? resolve() : reject(new Error('No se pudo inicializar Tesseract'));
     script.onerror = reject;
     document.head.appendChild(script);
   });
-
   return _tessReady;
 }
 
 let _workerPromise = null;
-async function getWorker(logger) {
+async function getWorker(logger){
   await ensureTesseractGlobal();
   if (_workerPromise) return _workerPromise;
 
   _workerPromise = (async () => {
-    const { createWorker } = window.Tesseract; // <- API global
-    // Intento 1: rutas estándar
+    const { createWorker } = window.Tesseract;
     try {
       const worker = createWorker({
         logger,
@@ -58,7 +55,6 @@ async function getWorker(logger) {
       return worker;
     } catch (e1) {
       console.warn('[OCR] Worker primario falló, probando alterno…', e1);
-      // Intento 2: langPath alterno
       const worker = createWorker({
         logger,
         workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js',
@@ -78,7 +74,7 @@ async function getWorker(logger) {
   return _workerPromise;
 }
 
-/* =================== API pública =================== */
+/* ===================== API pública ===================== */
 export async function initCard(){
   setOcrStatus('Listo para procesar tarjeta. Inicia la cámara o sube una imagen.');
 
@@ -91,20 +87,30 @@ export async function initCard(){
   const imgPrev    = qs('#image-preview');
   const video      = qs('#ocr-video');
 
-  if (btnStart)   btnStart.disabled = false;
-  if (btnStop)    btnStop.disabled  = true;
-  if (btnCapture) btnCapture.disabled = true;
-  if (btnProcess) btnProcess.hidden = true;
-  if (btnSave)    btnSave.hidden    = true;
-  if (imgPrev)    imgPrev.hidden    = true;
+  // Estado limpio inicial
+  resetOcrUI();
+
+  // Botonera base
+  disable(btnStart, false);
+  disable(btnStop, true);
+  disable(btnCapture, true);
+  hide(btnProcess, true);
+  hide(btnSave, true);
+  hide(imgPrev, true);
+
+  // Ajuste de alto/ratio para el contenedor del video (tarjeta)
+  applyCardAspect();
+  window.addEventListener('resize', applyCardAspect);
+  video?.addEventListener('loadedmetadata', applyCardAspect);
 
   if (btnStart){
     btnStart.onclick = async () => {
+      resetOcrUI();                 // limpia todo antes de encender
       await startOcrCamera();
       await waitForVideoReady(video);
-      setTimeout(() => { if (btnCapture && video.videoWidth) btnCapture.disabled = false; }, 120);
-      if (btnStop) btnStop.disabled = false;
-      btnStart.disabled = true;
+      setTimeout(() => { disable(btnCapture, !video.videoWidth); }, 120);
+      disable(btnStop, false);
+      disable(btnStart, true);
       setOcrStatus('Cámara activa. Alinea la tarjeta y captura.');
     };
   }
@@ -112,9 +118,9 @@ export async function initCard(){
   if (btnStop){
     btnStop.onclick = () => {
       stopOcrCamera();
-      if (btnStart)  btnStart.disabled = false;
-      btnStop.disabled = true;
-      if (btnCapture) btnCapture.disabled = true;
+      disable(btnStart, false);
+      disable(btnStop, true);
+      disable(btnCapture, true);
       setOcrStatus('Cámara detenida.');
     };
   }
@@ -125,15 +131,15 @@ export async function initCard(){
       await waitForVideoReady(video);
       if (!video.videoWidth) return alert('Cámara aún no está lista. Intenta de nuevo.');
 
-      capturedDataUrl = grabFrame(video);
+      capturedDataUrl = grabFrameCard(video, CARD_RATIO, 1200);
       showPreview(capturedDataUrl);
 
-      if (btnProcess) btnProcess.hidden = false;
+      hide(btnProcess, false);      // habilita “Procesar OCR”
 
-      // Paramos la cámara tras capturar (opcional)
+      // Opcional: paramos la cámara después de la captura
       stopOcrCamera();
-      if (btnStart) btnStart.disabled = false;
-      if (btnStop)  btnStop.disabled  = true;
+      disable(btnStart, false);
+      disable(btnStop, true);
 
       setOcrStatus('Imagen capturada. Lista para OCR.');
     };
@@ -145,9 +151,10 @@ export async function initCard(){
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
+        // Nota: no recortamos el archivo subido; lo mostraremos tal cual
         capturedDataUrl = reader.result;
         showPreview(capturedDataUrl);
-        if (btnProcess) btnProcess.hidden = false;
+        hide(btnProcess, false);
         setOcrStatus('Imagen cargada. Lista para OCR.');
       };
       reader.readAsDataURL(file);
@@ -162,29 +169,29 @@ export async function initCard(){
       const resultEl = qs('#ocr-result');
       const preText  = qs('#detected-text');
 
-      if (loading)  loading.hidden = false;
-      if (resultEl) resultEl.hidden = false; // lo mostramos antes para feedback
+      hide(loading, false);
+      hide(resultEl, false);
+      disable(btnProcess, true); // para evitar doble clic
 
       try{
         const preprocessed = await preprocessForOCR(capturedDataUrl);
         const text = await runOCR(preprocessed);
-
         if (preText) preText.textContent = text;
 
         const extracted = extractContactInfo(text);
         const merged = mergeContact(store.get?.() ?? {}, extracted);
         store.set(merged);
 
-        const btnSave2 = qs('#save-from-card');
-        if (btnSave2) btnSave2.hidden = false;
-
+        hide(btnSave, false);
         setOcrStatus('OCR completado ✅. Revisa y guarda.');
       } catch (e){
         console.error('Error en OCR:', e);
         alert('Error al procesar la imagen. Intenta con una foto más clara.');
         setOcrStatus('Error de OCR. Revisa consola.');
       } finally {
-        if (loading) loading.hidden = true;
+        hide(loading, true);
+        disable(btnProcess, false); // lo dejamos disponible por si reintenta
+        // lo mantenemos visible (no hide) para que pueda reprocesar
       }
     };
   }
@@ -194,20 +201,20 @@ export async function initCard(){
       alert('Información guardada ✅');
     };
   }
-
-  window.addEventListener('resize', fitPreviewMaxWidth);
 }
 
 export async function destroyCard(){
   stopOcrCamera();
+  window.removeEventListener('resize', applyCardAspect);
 }
 
-/* =================== Cámara (vía camera.js) =================== */
+/* ===================== Cámara (vía camera.js) ===================== */
 async function startOcrCamera(){
   try{
     const stream = await camStart({ facingMode: 'environment' });
     const video = qs('#ocr-video');
     await attachToVideo(video, stream);
+    video.style.objectFit = 'cover';
     console.log('[OCR] Cámara OK');
     setOcrStatus('Cámara activa.');
   } catch (e){
@@ -218,7 +225,25 @@ async function startOcrCamera(){
 }
 function stopOcrCamera(){ camStop(); }
 
-/* =================== Captura y preproceso =================== */
+/* ===================== Layout: relación de aspecto tarjeta ===================== */
+function applyCardAspect(){
+  const video = qs('#ocr-video');
+  if (!video) return;
+  const wrap = video.parentElement; // contenedor .camera-container de esta sección
+  if (!wrap) return;
+
+  // Ajusta el alto del contenedor según el ancho y la relación de una tarjeta
+  const w = wrap.clientWidth || 640;
+  const h = Math.round(w / CARD_RATIO);
+  wrap.style.height = h + 'px';
+
+  // El video ocupa todo el contenedor, centrado y recortado
+  video.style.width = '100%';
+  video.style.height = '100%';
+  video.style.objectFit = 'cover';
+}
+
+/* ===================== Captura + Canvas helpers ===================== */
 function waitForVideoReady(video){
   if (video && video.videoWidth > 0 && video.videoHeight > 0) return Promise.resolve();
   return new Promise(res => {
@@ -241,23 +266,43 @@ function ensureCanvas(w, h){
   if (!ctx) ctx = offscreen.getContext('2d', { willReadFrequently:true });
 }
 
-function grabFrame(videoEl){
-  ensureCanvas(videoEl.videoWidth || 1280, videoEl.videoHeight || 720);
-  ctx.drawImage(videoEl, 0, 0, offscreen.width, offscreen.height);
+/**
+ * Captura del frame de video recortando al centro con relación de tarjeta (ratio),
+ * y escalando a un ancho máximo (maxW).
+ */
+function grabFrameCard(videoEl, ratio = CARD_RATIO, maxW = 1200){
+  const vw = videoEl.videoWidth || 1280;
+  const vh = videoEl.videoHeight || 720;
+  const videoRatio = vw / vh;
+
+  // Área a recortar del frame para cumplir el ratio objetivo
+  let rw, rh;
+  if (videoRatio > ratio) {
+    // Video es "más ancho": limitamos por alto
+    rh = vh;
+    rw = Math.round(rh * ratio);
+  } else {
+    // Video “más alto”: limitamos por ancho
+    rw = vw;
+    rh = Math.round(rw / ratio);
+  }
+
+  // Coordenadas para centrar el recorte
+  const sx = Math.floor((vw - rw) / 2);
+  const sy = Math.floor((vh - rh) / 2);
+
+  // Escala de salida
+  const outW = Math.min(maxW, rw);
+  const outH = Math.round(outW / ratio);
+
+  ensureCanvas(outW, outH);
+  ctx.drawImage(videoEl, sx, sy, rw, rh, 0, 0, outW, outH);
   return offscreen.toDataURL('image/png');
 }
 
-function loadImage(src){
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.onload = () => res(img);
-    img.onerror = rej;
-    img.src = src;
-  });
-}
-
+/* ===================== Preproceso ===================== */
 /**
- * Preproceso: escala máx (1200), gris, contraste y binarización simple.
+ * Escala máx 1200px de ancho (manteniendo ratio), gris + contraste + umbral rápido.
  */
 async function preprocessForOCR(dataUrl, maxW = 1200){
   const img = await loadImage(dataUrl);
@@ -283,7 +328,7 @@ async function preprocessForOCR(dataUrl, maxW = 1200){
   }
   ctx.putImageData(id, 0, 0);
 
-  // Umbral binario rápido (media)
+  // Umbral binario rápido (por media)
   const id2 = ctx.getImageData(0, 0, w, h);
   const px = id2.data;
   let sum = 0, count = 0;
@@ -298,7 +343,16 @@ async function preprocessForOCR(dataUrl, maxW = 1200){
   return offscreen.toDataURL('image/png');
 }
 
-/* =================== OCR (worker + fallback) =================== */
+function loadImage(src){
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+/* ===================== OCR (worker + fallback) ===================== */
 async function runOCR(dataUrl){
   const logger = (m) => {
     if (m.status === 'recognizing text'){
@@ -320,24 +374,28 @@ async function runOCR(dataUrl){
   }
 }
 
-/* =================== Extracción + Notas enriquecidas =================== */
+/* ===================== Extracción + Notas enriquecidas ===================== */
 function extractContactInfo(text){
   const patch = {};
 
+  // Emails (principal + extras a notas)
   const emails = [...text.matchAll(/\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g)].map(m => m[0]);
   if (emails.length) patch.email = normalizeEmail(emails[0]);
 
+  // Teléfono (muy permisivo)
   const phoneMatch = text.match(/(\+\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{0,4}/);
   if (phoneMatch && phoneMatch[0].replace(/\D/g,'').length >= 7) {
     patch.phone = normalizePhone(phoneMatch[0]);
   }
 
+  // Cargo y empresa (heurísticas simples)
   const roleLine = findLine(text, /(gerente|director|jefe|coordinador|analista|ingeniero|ventas|marketing|compras|ceo|cto|coo|founder|manager|head|lead)/i);
   if (roleLine) patch.position = clean(roleLine);
 
   const companyLine = findLine(text, /\b(sas|s\.a\.|s\.a|srl|ltda|corp|inc|company|industria|manufact|fabric|group|grupo)\b/i);
   if (companyLine) patch.company = clean(companyLine);
 
+  // Nombre probable
   if (!patch.name){
     const lines = linesFrom(text);
     for (const ln of lines){
@@ -351,7 +409,7 @@ function extractContactInfo(text){
     }
   }
 
-  // Notas: URLs y redes (cada una en su línea)
+  // Notas: URLs y redes en líneas separadas
   const noteLines = [];
   const urls = [...text.matchAll(/\bhttps?:\/\/[^\s]+/gi)].map(m => m[0]);
   urls.forEach(u => noteLines.push(`URL: ${u}`));
@@ -388,18 +446,7 @@ function extractContactInfo(text){
   return patch;
 }
 
-/* =================== Utilidades =================== */
-function linesFrom(text){
-  return text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-}
-function findLine(text, re){
-  return linesFrom(text).find(ln => re.test(ln));
-}
-function clean(s){
-  return s.replace(/\s{2,}/g,' ').replace(/[|•·]+/g,'').trim();
-}
-
-/* =================== Merge =================== */
+/* ===================== Merge ===================== */
 function mergeContact(existing, incoming){
   const out = { ...existing };
   for (const k of ['name','company','position','phone','email','notes']){
@@ -411,14 +458,44 @@ function mergeContact(existing, incoming){
   return out;
 }
 
-/* =================== UI helpers =================== */
+/* ===================== Limpieza UI ===================== */
+function resetOcrUI(){
+  const btnCapture = qs('#capture-btn');
+  const btnProcess = qs('#process-card');
+  const btnSave    = qs('#save-from-card');
+  const imgPrev    = qs('#image-preview');
+  const resultEl   = qs('#ocr-result');
+  const preText    = qs('#detected-text');
+  const fileInput  = qs('#card-upload');
+
+  capturedDataUrl = null;
+  if (fileInput) fileInput.value = '';
+
+  hide(imgPrev, true);
+  hide(btnProcess, true);
+  hide(btnSave, true);
+  hide(resultEl, true);
+  if (preText) preText.textContent = '';
+
+  disable(btnCapture, true);
+}
+
+/* ===================== Helpers varios ===================== */
+function linesFrom(text){ return text.split(/\r?\n/).map(s => s.trim()).filter(Boolean); }
+function findLine(text, re){ return linesFrom(text).find(ln => re.test(ln)); }
+function clean(s){ return s.replace(/\s{2,}/g,' ').replace(/[|•·]+/g,'').trim(); }
+
 function showPreview(dataUrl){
   const img = qs('#image-preview');
-  if (img){ img.src = dataUrl; img.hidden = false; }
-  fitPreviewMaxWidth();
-}
-function fitPreviewMaxWidth(){ /* opcional */ }
-function setOcrStatus(msg){
-  const s = qs('#ocr-status');
-  if (s) s.textContent = msg;
+  if (img){
+    img.src = dataUrl;
+    img.style.objectFit = 'cover';
+    img.hidden = false;
+    // Mantén el mismo alto que el contenedor del video (ya ajustado a CARD_RATIO)
+    const video = qs('#ocr-video');
+    if (video && video.parentElement){
+      img.style.width = '100%';
+      img.style.height = video.parentElement.style.height || 'auto';
+    }
+  }
 }
