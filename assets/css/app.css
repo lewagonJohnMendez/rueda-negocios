@@ -182,7 +182,7 @@ button[disabled], .disabled{
 .qr-wrap{
   position: relative;
   width: 100%;
-  max-width: 420px;        /* opcional */
+  max-width: 520px;        /* opcional */
   margin: 0 auto;          /* centrado horizontal */
   aspect-ratio: 4 / 3;     /* mantiene proporción estable */
   background: #0b1120;     /* fondo mientras carga */

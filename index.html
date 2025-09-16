@@ -109,46 +109,36 @@
 
 
     <!-- TAB: Foto de Tarjeta (OCR) -->
-    <section id="card-tab" class="tab-content p-3" role="tabpanel">
-      <div class="mb-3">
-        <label for="card-option" class="form-label">Selecciona una opción</label>
-        <select id="card-option" class="form-select w-auto">
-          <option value="camera">Usar la cámara</option>
-          <option value="upload">Subir imagen</option>
-        </select>
-      </div>
+        <section id="card-tab" class="tab-content" role="tabpanel" aria-labelledby="tab-card">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <button id="card-start"   class="btn btn-primary btn-sm">Iniciar cámara</button>
+            <button id="card-stop"    class="btn btn-outline-secondary btn-sm" disabled>Detener</button>
+            <button id="capture-btn"  class="btn btn-success btn-sm" disabled>Capturar</button>
+            <input id="card-upload" type="file" accept="image/*" class="form-control form-control-sm" style="max-width:260px">
+            <button id="process-card" class="btn btn-info btn-sm" hidden>Procesar OCR</button>
+            <button id="save-from-card" class="btn btn-success btn-sm" hidden>Guardar</button>
+            <span id="ocr-status" class="text-muted small">Listo para procesar tarjeta. Inicia la cámara o sube una imagen.</span>
+        </div>
 
-      <div id="camera-section" hidden>
         <div class="camera-container mb-2">
-          <video id="camera-preview" class="w-100 rounded border" autoplay playsinline></video>
+            <video id="ocr-video" autoplay playsinline muted class="rounded border" style="max-height:380px"></video>
         </div>
-        <button id="capture-btn" type="button" class="btn btn-outline-primary">Capturar Foto</button>
-      </div>
 
-      <div id="upload-section" hidden>
-        <input id="card-upload" type="file" accept="image/*" class="form-control mb-2" />
-        <div class="camera-container">
-          <img id="image-preview" alt="Vista previa" class="img-fluid rounded border" hidden />
+        <div class="camera-container mt-2">
+            <img id="image-preview" alt="Vista previa" class="rounded border" hidden />
         </div>
-      </div>
 
-      <div id="ocr-loading" class="ocr-loading d-flex align-items-center gap-2 mt-3" hidden>
-        <div class="spinner border rounded-circle" style="width:28px;height:28px;"></div>
-        <p class="mb-0">Procesando…</p>
-      </div>
-
-      <div id="ocr-result" class="ocr-result card mt-3" hidden>
-        <div class="card-body">
-          <h4 class="h6 mb-2">Texto detectado</h4>
-          <pre id="detected-text" class="mb-0"></pre>
+        <div id="ocr-loading" class="ocr-loading mt-3" hidden>
+            <div class="spinner"></div><p class="m-0">Procesando…</p>
         </div>
-      </div>
 
-      <div class="mt-3 d-flex gap-2">
-        <button id="process-card" type="button" class="btn btn-primary" hidden>Procesar Tarjeta</button>
-        <button id="save-from-card" type="button" class="btn btn-outline-success" hidden>Guardar Información</button>
-      </div>
-    </section>
+        <div id="ocr-result" class="ocr-result mt-3" hidden>
+            <h6 class="mb-2">Texto detectado</h6>
+            <pre id="detected-text" class="small" style="white-space:pre-wrap"></pre>
+        </div>
+        </section>
+
+
 
     <!-- TAB: Audio -->
     <section id="audio-tab" class="tab-content p-3" role="tabpanel">

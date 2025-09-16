@@ -1,93 +1,128 @@
-import { store } from './store.js';
-import { qs, show } from './dom.js';
-import { normalizeEmail, normalizePhone } from './validators.js';
+// assets/js/camera.js
+// Centro de control de cámara para QR/OCR
 
-let stream = null;
-let captured = null;
-let off = [];
+let currentStream = null;
 
-export function initCard(){
-  const select = qs('#card-option');
-  const cameraSection = qs('#camera-section');
-  const uploadSection = qs('#upload-section');
-  const video = qs('#camera-preview');
-  const img = qs('#image-preview');
-
-  const updateMode = async () => {
-    const useCam = select.value === 'camera';
-    show(cameraSection, useCam);
-    show(uploadSection, !useCam);
-    if (useCam) await startCamera(video); else stopCamera();
-  };
-  select.addEventListener('change', updateMode);
-  updateMode();
-
-  qs('#capture-btn').addEventListener('click', () => {
-    if (!video.videoWidth) return alert('Cámara no lista');
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    captured = canvas.toDataURL('image/png');
-    img.src = captured; img.hidden = false;
-    show(qs('#process-card'), true);
-    stopCamera();
-  });
-
-  qs('#card-upload').addEventListener('change', (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      captured = reader.result;
-      img.src = captured; img.hidden = false;
-      show(qs('#process-card'), true);
-    };
-    reader.readAsDataURL(file);
-  });
-
-  qs('#process-card').addEventListener('click', processOCR);
-  qs('#save-from-card').addEventListener('click', () => alert('Información guardada ✅'));
-}
-
-export async function destroyCard(){
-  stopCamera();
-}
-
-async function startCamera(video){
-  stopCamera();
-  try{
-    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false });
-    video.srcObject = stream;
-  } catch {
-    alert('No se pudo acceder a la cámara. Revisa permisos.');
+/* =============== Seguridad =============== */
+export function ensureSecure(){
+  const host = location.hostname;
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1';
+  const isHttps = location.protocol === 'https:';
+  if (!isHttps && !isLocal) {
+    throw new Error('La cámara requiere HTTPS o localhost.');
   }
 }
-function stopCamera(){
-  if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+
+/* ========== Listado de cámaras ========== */
+export async function listVideoInputs(){
+  ensureSecure();
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices.filter(d => d.kind === 'videoinput');
 }
 
-async function processOCR(){
-  if (!captured) return alert('Captura o sube una imagen primero');
+/* ============== Start / Stop ============== */
+export async function startCamera({ deviceId, facingMode = 'environment' } = {}){
+  ensureSecure();
+  stopCamera();
 
-  const loading = qs('#ocr-loading'), resultBox = qs('#ocr-result'), pre = qs('#detected-text');
-  show(loading, true); show(resultBox, false);
+  // Estrategia con fallbacks
+  const tries = [];
+  const tryGet = async (constraints) => {
+    tries.push(JSON.stringify(constraints));
+    return navigator.mediaDevices.getUserMedia(constraints);
+  };
 
-  try{
-    const Tesseract = (await import('https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js')).default;
-    const { data:{ text } } = await Tesseract.recognize(captured, 'spa+eng');
-    pre.textContent = text; show(resultBox, true); show(qs('#save-from-card'), true);
+  let stream;
+  try {
+    // Preferido (por id o por facing)
+    stream = await tryGet({
+      video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: facingMode } },
+      audio: false
+    });
+  } catch {
+    try {
+      // Fallback 1: forzar environment
+      stream = await tryGet({ video: { facingMode: 'environment' }, audio: false });
+    } catch {
+      try {
+        // Fallback 2: forzar user (frontal)
+        stream = await tryGet({ video: { facingMode: 'user' }, audio: false });
+      } catch {
+        // Fallback 3: lo que haya
+        stream = await tryGet({ video: true, audio: false });
+      }
+    }
+  }
 
-    // extracción simple
-    const email = (text.match(/\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b/)||[])[0];
-    const phone = (text.match(/(\+\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s-]?\d{2,4}[\s-]?\d{2,4}[\s-]?\d{0,4}/)||[])[0];
+  currentStream = stream;
+  return stream;
+}
 
-    const patch = { notes:`OCR:\n${text}` };
-    if (email) patch.email = normalizeEmail(email);
-    if (phone) patch.phone = normalizePhone(phone);
-    store.set(patch);
+export function stopCamera(){
+  if (currentStream){
+    currentStream.getTracks().forEach(t => t.stop());
+    currentStream = null;
+  }
+}
 
-  } catch (e){
-    alert('Error al procesar la imagen. Intenta con una más clara.');
-  } finally {
-    show(loading, false);
+export function getCurrentStream(){
+  return currentStream;
+}
+
+/* ============== Helpers de video ============== */
+export async function attachToVideo(videoEl, stream = currentStream){
+  if (!videoEl) throw new Error('No se encontró el <video> destino');
+  if (!stream) throw new Error('No hay stream de cámara activo');
+
+  // Ayuda a evitar bloqueos de autoplay (Firefox/Safari)
+  videoEl.setAttribute('playsinline', '');
+  videoEl.muted = true;
+
+  videoEl.srcObject = stream;
+
+  // Espera a tener metadatos antes de leer dimensiones
+  await waitLoadedMetadata(videoEl);
+
+  // Intentar play tras evento de usuario normalmente no falla,
+  // pero por si acaso lo reintenta.
+  try {
+    await videoEl.play();
+  } catch {
+    await new Promise(r => setTimeout(r, 0));
+    await videoEl.play();
+  }
+
+  return { width: videoEl.videoWidth, height: videoEl.videoHeight };
+}
+
+function waitLoadedMetadata(videoEl){
+  if (videoEl.readyState >= 1 && videoEl.videoWidth) return Promise.resolve();
+  return new Promise(res => {
+    const onMeta = () => { videoEl.removeEventListener('loadedmetadata', onMeta); res(); };
+    videoEl.addEventListener('loadedmetadata', onMeta, { once: true });
+  });
+}
+
+/* ============== Selector opcional ============== */
+export async function initCameraSelector(selectId, videoId){
+  const sel = document.getElementById(selectId);
+  const video = document.getElementById(videoId);
+  if (!sel || !video) return;
+
+  const cams = await listVideoInputs();
+  sel.innerHTML = cams.map(c => `<option value="${c.deviceId}">${c.label || 'Cámara'}</option>`).join('');
+
+  sel.onchange = async () => {
+    stopCamera();
+    const stream = await startCamera({ deviceId: sel.value });
+    await attachToVideo(video, stream);
+  };
+
+  if (cams.length) {
+    const stream = await startCamera({ deviceId: cams[0].deviceId });
+    await attachToVideo(video, stream);
   }
 }
