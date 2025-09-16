@@ -1,5 +1,5 @@
 // assets/js/ocr.js
-// Cámara + captura + preproceso + OCR (Tesseract) + extracción + merge (con notas enriquecidas)
+// Cámara + captura + preproceso + OCR (Tesseract global) + extracción + merge
 import { store } from './store.js';
 import { qs } from './dom.js';
 import { normalizeEmail, normalizePhone } from './validators.js';
@@ -9,20 +9,88 @@ let capturedDataUrl = null;
 let offscreen = null;
 let ctx = null;
 
+/* =========================================================
+   Cargar Tesseract como GLOBAL (window.Tesseract) + worker
+   ========================================================= */
+let _tessReady = null;
+async function ensureTesseractGlobal() {
+  if (_tessReady) return _tessReady;
+
+  _tessReady = new Promise((resolve, reject) => {
+    if (window.Tesseract && window.Tesseract.createWorker) return resolve();
+
+    const script = document.createElement('script');
+    // Versión 2.x estable para browser UMD
+    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/tesseract.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Tesseract) resolve();
+      else reject(new Error('No se pudo inicializar Tesseract global'));
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  return _tessReady;
+}
+
+let _workerPromise = null;
+async function getWorker(logger) {
+  await ensureTesseractGlobal();
+  if (_workerPromise) return _workerPromise;
+
+  _workerPromise = (async () => {
+    const { createWorker } = window.Tesseract; // <- API global
+    // Intento 1: rutas estándar
+    try {
+      const worker = createWorker({
+        logger,
+        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js',
+        corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.wasm.js',
+        langPath:   'https://tessdata.projectnaptha.com/4.0.0',
+      });
+      await worker.load();
+      await worker.loadLanguage('spa');
+      await worker.loadLanguage('eng');
+      await worker.initialize('spa+eng');
+      await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      console.log('[OCR] Worker listo (primario)');
+      return worker;
+    } catch (e1) {
+      console.warn('[OCR] Worker primario falló, probando alterno…', e1);
+      // Intento 2: langPath alterno
+      const worker = createWorker({
+        logger,
+        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@2.1.5/dist/worker.min.js',
+        corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@2.2.0/tesseract-core.wasm.js',
+        langPath:   'https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0',
+      });
+      await worker.load();
+      await worker.loadLanguage('spa');
+      await worker.loadLanguage('eng');
+      await worker.initialize('spa+eng');
+      await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      console.log('[OCR] Worker listo (alterno)');
+      return worker;
+    }
+  })();
+
+  return _workerPromise;
+}
+
 /* =================== API pública =================== */
 export async function initCard(){
   setOcrStatus('Listo para procesar tarjeta. Inicia la cámara o sube una imagen.');
 
-  const btnStart   = qs('#card-start');     // Iniciar cámara
-  const btnStop    = qs('#card-stop');      // Detener cámara
-  const btnCapture = qs('#capture-btn');    // Capturar frame
-  const fileInput  = qs('#card-upload');    // Subir imagen
-  const btnProcess = qs('#process-card');   // Ejecutar OCR
-  const btnSave    = qs('#save-from-card'); // Guardar (opcional)
-  const imgPrev    = qs('#image-preview');  // <img> preview
-  const video      = qs('#ocr-video');      // <video> cámara
+  const btnStart   = qs('#card-start');
+  const btnStop    = qs('#card-stop');
+  const btnCapture = qs('#capture-btn');
+  const fileInput  = qs('#card-upload');
+  const btnProcess = qs('#process-card');
+  const btnSave    = qs('#save-from-card');
+  const imgPrev    = qs('#image-preview');
+  const video      = qs('#ocr-video');
 
-  // Estado inicial
   if (btnStart)   btnStart.disabled = false;
   if (btnStop)    btnStop.disabled  = true;
   if (btnCapture) btnCapture.disabled = true;
@@ -30,19 +98,17 @@ export async function initCard(){
   if (btnSave)    btnSave.hidden    = true;
   if (imgPrev)    imgPrev.hidden    = true;
 
-  // Iniciar cámara
   if (btnStart){
     btnStart.onclick = async () => {
       await startOcrCamera();
       await waitForVideoReady(video);
-      if (btnCapture) btnCapture.disabled = false;
+      setTimeout(() => { if (btnCapture && video.videoWidth) btnCapture.disabled = false; }, 120);
       if (btnStop) btnStop.disabled = false;
       btnStart.disabled = true;
       setOcrStatus('Cámara activa. Alinea la tarjeta y captura.');
     };
   }
 
-  // Detener cámara
   if (btnStop){
     btnStop.onclick = () => {
       stopOcrCamera();
@@ -53,7 +119,6 @@ export async function initCard(){
     };
   }
 
-  // Capturar frame de la cámara
   if (btnCapture){
     btnCapture.onclick = async () => {
       if (!video) return alert('No encuentro el video 😅');
@@ -65,7 +130,7 @@ export async function initCard(){
 
       if (btnProcess) btnProcess.hidden = false;
 
-      // UX: paramos la cámara tras capturar (así ahorramos batería y liberamos el stream)
+      // Paramos la cámara tras capturar (opcional)
       stopOcrCamera();
       if (btnStart) btnStart.disabled = false;
       if (btnStop)  btnStop.disabled  = true;
@@ -74,7 +139,6 @@ export async function initCard(){
     };
   }
 
-  // Subir imagen desde archivo
   if (fileInput){
     fileInput.onchange = (e) => {
       const file = e.target.files?.[0];
@@ -90,7 +154,6 @@ export async function initCard(){
     };
   }
 
-  // Procesar OCR
   if (btnProcess){
     btnProcess.onclick = async () => {
       if (!capturedDataUrl) return alert('Captura o sube una imagen primero');
@@ -100,19 +163,15 @@ export async function initCard(){
       const preText  = qs('#detected-text');
 
       if (loading)  loading.hidden = false;
-      if (resultEl) resultEl.hidden = true;
+      if (resultEl) resultEl.hidden = false; // lo mostramos antes para feedback
 
       try{
         const preprocessed = await preprocessForOCR(capturedDataUrl);
-        const text = await runTesseract(preprocessed, 'spa+eng');
+        const text = await runOCR(preprocessed);
 
-        if (preText) { preText.textContent = text; }
-        if (resultEl) resultEl.hidden = false;
+        if (preText) preText.textContent = text;
 
-        // Extraer datos + notas enriquecidas (URLs/redes)
         const extracted = extractContactInfo(text);
-
-        // Merge inteligente (no pisa campos ya existentes)
         const merged = mergeContact(store.get?.() ?? {}, extracted);
         store.set(merged);
 
@@ -123,21 +182,19 @@ export async function initCard(){
       } catch (e){
         console.error('Error en OCR:', e);
         alert('Error al procesar la imagen. Intenta con una foto más clara.');
-        setOcrStatus('Error de OCR. Intenta nuevamente.');
+        setOcrStatus('Error de OCR. Revisa consola.');
       } finally {
         if (loading) loading.hidden = true;
       }
     };
   }
 
-  // Guardar (opcional, ya hicimos merge arriba)
   if (btnSave){
     btnSave.onclick = () => {
       alert('Información guardada ✅');
     };
   }
 
-  // Por si quieres ajustar algo responsivo
   window.addEventListener('resize', fitPreviewMaxWidth);
 }
 
@@ -172,7 +229,7 @@ function waitForVideoReady(video){
       }
     };
     video.addEventListener('loadedmetadata', done, { once:true });
-    setTimeout(done, 60);
+    setTimeout(done, 100);
   });
 }
 
@@ -200,12 +257,11 @@ function loadImage(src){
 }
 
 /**
- * Escala (máx ancho), convierte a grises y aumenta contraste (mejora OCR).
+ * Preproceso: escala máx (1200), gris, contraste y binarización simple.
  */
-async function preprocessForOCR(dataUrl, maxW = 1400){
+async function preprocessForOCR(dataUrl, maxW = 1200){
   const img = await loadImage(dataUrl);
 
-  // Escalado proporcional
   const ratio = img.width > maxW ? maxW / img.width : 1;
   const w = Math.round(img.width * ratio);
   const h = Math.round(img.height * ratio);
@@ -213,58 +269,75 @@ async function preprocessForOCR(dataUrl, maxW = 1400){
   ensureCanvas(w, h);
   ctx.drawImage(img, 0, 0, w, h);
 
-  // Gris + contraste simple
+  // Gris + contraste
   const id = ctx.getImageData(0, 0, w, h);
   const data = id.data;
-  const contrast = 1.25, brightness = 5;
+  const contrast = 1.35, brightness = 8;
 
   for (let i = 0; i < data.length; i += 4){
     const r = data[i], g = data[i+1], b = data[i+2];
-    let y = 0.299*r + 0.587*g + 0.114*b; // luma
+    let y = 0.299*r + 0.587*g + 0.114*b;
     y = (y - 128) * contrast + 128 + brightness;
     if (y < 0) y = 0; if (y > 255) y = 255;
     data[i] = data[i+1] = data[i+2] = y;
   }
   ctx.putImageData(id, 0, 0);
 
+  // Umbral binario rápido (media)
+  const id2 = ctx.getImageData(0, 0, w, h);
+  const px = id2.data;
+  let sum = 0, count = 0;
+  for (let i = 0; i < px.length; i += 4){ sum += px[i]; count++; }
+  const mean = sum / count;
+  for (let i = 0; i < px.length; i += 4){
+    const v = px[i] > mean ? 255 : 0;
+    px[i] = px[i+1] = px[i+2] = v;
+  }
+  ctx.putImageData(id2, 0, 0);
+
   return offscreen.toDataURL('image/png');
 }
 
-/* =================== OCR (Tesseract) =================== */
-async function runTesseract(dataUrl, lang = 'spa+eng'){
-  const mod = await import('https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js');
-  const Tesseract = mod.default || mod;
-  const onProgress = (m) => {
+/* =================== OCR (worker + fallback) =================== */
+async function runOCR(dataUrl){
+  const logger = (m) => {
     if (m.status === 'recognizing text'){
       setOcrStatus(`Reconociendo… ${Math.round((m.progress || 0)*100)}%`);
     }
   };
-  const { data: { text } } = await Tesseract.recognize(dataUrl, lang, { logger: onProgress });
-  return text;
+
+  try {
+    const worker = await getWorker(logger);
+    console.log('[OCR] Reconociendo con worker…');
+    const { data: { text } } = await worker.recognize(dataUrl);
+    return text;
+  } catch (e) {
+    console.warn('[OCR] Worker falló, usando fallback simple:', e);
+    await ensureTesseractGlobal();
+    const { recognize } = window.Tesseract;
+    const { data: { text } } = await recognize(dataUrl, 'spa+eng', { logger });
+    return text;
+  }
 }
 
 /* =================== Extracción + Notas enriquecidas =================== */
 function extractContactInfo(text){
   const patch = {};
 
-  // Correos (toma el primero como principal)
   const emails = [...text.matchAll(/\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g)].map(m => m[0]);
   if (emails.length) patch.email = normalizeEmail(emails[0]);
 
-  // Teléfono (muy permisivo, toma el primero como principal)
   const phoneMatch = text.match(/(\+\d{1,3}[\s-]?)?\(?\d{2,4}\)?[\s.-]?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{0,4}/);
   if (phoneMatch && phoneMatch[0].replace(/\D/g,'').length >= 7) {
     patch.phone = normalizePhone(phoneMatch[0]);
   }
 
-  // Cargo y empresa (heurísticas simples)
   const roleLine = findLine(text, /(gerente|director|jefe|coordinador|analista|ingeniero|ventas|marketing|compras|ceo|cto|coo|founder|manager|head|lead)/i);
   if (roleLine) patch.position = clean(roleLine);
 
   const companyLine = findLine(text, /\b(sas|s\.a\.|s\.a|srl|ltda|corp|inc|company|industria|manufact|fabric|group|grupo)\b/i);
   if (companyLine) patch.company = clean(companyLine);
 
-  // Nombre probable (línea destacada que no sea email/teléfono/url)
   if (!patch.name){
     const lines = linesFrom(text);
     for (const ln of lines){
@@ -278,16 +351,11 @@ function extractContactInfo(text){
     }
   }
 
-  // ===== Notas enriquecidas: todas las URLs + redes sociales (cada una en su línea) =====
+  // Notas: URLs y redes (cada una en su línea)
   const noteLines = [];
-
-  // Todas las URLs encontradas
   const urls = [...text.matchAll(/\bhttps?:\/\/[^\s]+/gi)].map(m => m[0]);
-  for (const u of urls){
-    noteLines.push(`URL: ${u}`);
-  }
+  urls.forEach(u => noteLines.push(`URL: ${u}`));
 
-  // Detectar redes aunque no vengan como URL completa
   const socialPatterns = [
     { key: 'Instagram', re: /\binstagram\.com\/[^\s]+/i },
     { key: 'TikTok',    re: /\btiktok\.com\/@[^\s]+/i },
@@ -302,7 +370,6 @@ function extractContactInfo(text){
     if (m) noteLines.push(`${key}: https://${m[0].replace(/^https?:\/\//i,'')}`);
   }
 
-  // Emails y teléfonos extra → a notas
   if (emails.length > 1){
     emails.slice(1).forEach(e => noteLines.push(`Email extra: ${e}`));
   }
@@ -312,15 +379,11 @@ function extractContactInfo(text){
   const uniqPhones = Array.from(new Set(phonesExtra)).filter(ph => ph.replace(/\D/g,'').length >= 7);
   uniqPhones.forEach(ph => noteLines.push(`Tel extra: ${normalizePhone(ph)}`));
 
-  // Dump completo del OCR al final (útil para revisar)
   if (text && text.trim()){
     noteLines.push('—— OCR ——');
     noteLines.push(text.trim());
   }
-
-  if (noteLines.length){
-    patch.notes = noteLines.join('\n');
-  }
+  if (noteLines.length) patch.notes = noteLines.join('\n');
 
   return patch;
 }
@@ -354,10 +417,7 @@ function showPreview(dataUrl){
   if (img){ img.src = dataUrl; img.hidden = false; }
   fitPreviewMaxWidth();
 }
-function fitPreviewMaxWidth(){
-  const img = qs('#image-preview');
-  if (!img) return;
-}
+function fitPreviewMaxWidth(){ /* opcional */ }
 function setOcrStatus(msg){
   const s = qs('#ocr-status');
   if (s) s.textContent = msg;
